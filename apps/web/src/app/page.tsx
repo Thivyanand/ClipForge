@@ -11,7 +11,21 @@ type Video = {
   height: number | null;
   codec: string | null;
   status: string;
+  transcriptionStatus: string;
+  transcriptionError: string | null;
   createdAt: string;
+};
+
+type Transcript = {
+  language: string | null;
+  text: string;
+  segments: Array<{ id: string; startSeconds: number; endSeconds: number; text: string }>;
+};
+
+type TranscriptResult = {
+  status: string;
+  error: string | null;
+  transcript: Transcript | null;
 };
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1").replace(/\/$/, "");
@@ -28,11 +42,23 @@ function formatDuration(seconds: number) {
   return mins ? `${mins}m ${secs}s` : `${secs}s`;
 }
 
+function formatTimestamp(seconds: number) {
+  const mins = Math.floor(seconds / 60);
+  const secs = (seconds % 60).toFixed(1).padStart(4, "0");
+  return `${mins}:${secs}`;
+}
+
+function statusLabel(status: string) {
+  return status.replaceAll("_", " ");
+}
+
 export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [videos, setVideos] = useState<Video[]>([]);
+  const [transcripts, setTranscripts] = useState<Record<string, TranscriptResult>>({});
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [workingVideoId, setWorkingVideoId] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -53,6 +79,12 @@ export default function Home() {
   useEffect(() => {
     void loadVideos();
   }, [loadVideos]);
+
+  useEffect(() => {
+    if (!videos.some((video) => ["queued", "processing"].includes(video.transcriptionStatus))) return;
+    const timer = window.setInterval(() => void loadVideos(), 3000);
+    return () => window.clearInterval(timer);
+  }, [videos, loadVideos]);
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -76,20 +108,50 @@ export default function Home() {
     body.append("file", file);
 
     try {
-      const response = await fetch(`${API_URL}/videos/upload`, {
-        method: "POST",
-        body,
-      });
+      const response = await fetch(`${API_URL}/videos/upload`, { method: "POST", body });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data.message ?? "Upload failed. Please try again.");
-      }
+      if (!response.ok) throw new Error(data.message ?? "Upload failed. Please try again.");
       setNotice(`${file.name} uploaded and saved to your library.`);
       await loadVideos();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed. Please try again.");
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function transcribe(video: Video) {
+    setWorkingVideoId(video.id);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`${API_URL}/videos/${video.id}/transcribe`, { method: "POST" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const message = Array.isArray(data.message) ? data.message.join(" ") : data.message;
+        throw new Error(message ?? "Could not queue transcription.");
+      }
+      setNotice(data.message ?? "Transcription queued.");
+      await loadVideos();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not queue transcription.");
+    } finally {
+      setWorkingVideoId("");
+    }
+  }
+
+  async function viewTranscript(video: Video) {
+    setWorkingVideoId(video.id);
+    setError("");
+    try {
+      const response = await fetch(`${API_URL}/videos/${video.id}/transcript`, { cache: "no-store" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message ?? "Could not load transcript.");
+      setTranscripts((current) => ({ ...current, [video.id]: data }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load transcript.");
+    } finally {
+      setWorkingVideoId("");
     }
   }
 
@@ -112,7 +174,7 @@ export default function Home() {
             <div>
               <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">Make more from every video.</h1>
               <p className="mt-4 max-w-2xl text-base leading-7 text-zinc-400">
-                Upload a recording to start building your library. ClipForge checks the media and saves its details for your next editing session.
+                Upload a recording, generate a transcript, and keep every timestamp in your ClipForge library.
               </p>
             </div>
             <div className="flex shrink-0 flex-col gap-2">
@@ -136,28 +198,16 @@ export default function Home() {
           </div>
         </section>
 
-        {error && (
-          <div role="alert" className="mb-5 rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-200">
-            {error}
-          </div>
-        )}
-        {notice && (
-          <div role="status" className="mb-5 rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">
-            {notice}
-          </div>
-        )}
+        {error && <div role="alert" className="mb-5 rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-200">{error}</div>}
+        {notice && <div role="status" className="mb-5 rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">{notice}</div>}
 
         <section className="rounded-2xl border border-white/10 bg-white/[0.025]">
           <div className="flex items-center justify-between border-b border-white/10 px-5 py-5 sm:px-7">
             <div>
               <h2 className="text-lg font-semibold">Your videos</h2>
-              <p className="mt-1 text-sm text-zinc-500">Uploads saved in your ClipForge library</p>
+              <p className="mt-1 text-sm text-zinc-500">Upload, transcribe and review your video library</p>
             </div>
-            <button
-              type="button"
-              onClick={() => void loadVideos()}
-              className="rounded-lg border border-white/10 px-3 py-2 text-xs text-zinc-300 transition hover:bg-white/5"
-            >
+            <button type="button" onClick={() => void loadVideos()} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-zinc-300 transition hover:bg-white/5">
               Refresh
             </button>
           </div>
@@ -168,37 +218,64 @@ export default function Home() {
             <div className="px-6 py-16 text-center sm:py-20">
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-2xl">▶</div>
               <h3 className="mt-5 text-base font-medium">Your library is ready</h3>
-              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-zinc-500">
-                No videos yet. Upload your first recording and it will appear here with its duration, resolution and file details.
-              </p>
-              <button
-                type="button"
-                onClick={() => inputRef.current?.click()}
-                disabled={uploading}
-                className="mt-6 rounded-lg border border-violet-400/30 px-4 py-2.5 text-sm font-medium text-violet-200 transition hover:bg-violet-400/10 disabled:opacity-50"
-              >
-                Choose a video
-              </button>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-zinc-500">No videos yet. Upload your first recording to get started.</p>
+              <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading} className="mt-6 rounded-lg border border-violet-400/30 px-4 py-2.5 text-sm font-medium text-violet-200 transition hover:bg-violet-400/10 disabled:opacity-50">Choose a video</button>
             </div>
           ) : (
             <div className="divide-y divide-white/[0.07]">
-              {videos.map((video) => (
-                <article key={video.id} className="flex flex-col gap-3 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
-                  <div className="flex min-w-0 items-center gap-4">
-                    <div className="flex h-12 w-16 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-gradient-to-br from-violet-500/20 to-indigo-500/10 text-lg text-violet-200">▶</div>
-                    <div className="min-w-0">
-                      <h3 className="truncate text-sm font-medium text-zinc-100">{video.originalName}</h3>
-                      <p className="mt-1 text-xs text-zinc-500">
-                        {formatDuration(video.durationSeconds)} · {video.width && video.height ? `${video.width} × ${video.height}` : "Resolution unknown"} · {formatBytes(video.size)}
-                      </p>
+              {videos.map((video) => {
+                const transcriptData = transcripts[video.id];
+                const isBusy = workingVideoId === video.id;
+                const canTranscribe = ["not_started", "failed"].includes(video.transcriptionStatus);
+                return (
+                  <article key={video.id} className="px-5 py-5 sm:px-7">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="flex min-w-0 items-center gap-4">
+                        <div className="flex h-12 w-16 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-gradient-to-br from-violet-500/20 to-indigo-500/10 text-lg text-violet-200">▶</div>
+                        <div className="min-w-0">
+                          <h3 className="truncate text-sm font-medium text-zinc-100">{video.originalName}</h3>
+                          <p className="mt-1 text-xs text-zinc-500">{formatDuration(video.durationSeconds)} · {video.width && video.height ? `${video.width} × ${video.height}` : "Resolution unknown"} · {formatBytes(video.size)}</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 pl-20 lg:pl-0">
+                        <span className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-zinc-400">Upload: {statusLabel(video.status)}</span>
+                        <span className="rounded-full border border-violet-400/20 bg-violet-400/10 px-2.5 py-1 text-[11px] font-medium text-violet-200">Transcript: {statusLabel(video.transcriptionStatus)}</span>
+                        {canTranscribe && (
+                          <button type="button" disabled={isBusy} onClick={() => void transcribe(video)} className="rounded-lg bg-violet-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-violet-400 disabled:opacity-50">
+                            {isBusy ? "Working…" : video.transcriptionStatus === "failed" ? "Retry transcription" : "Transcribe"}
+                          </button>
+                        )}
+                        {["queued", "processing"].includes(video.transcriptionStatus) && <span className="text-xs text-amber-300">Transcription in progress…</span>}
+                        {video.transcriptionStatus === "completed" && (
+                          <button type="button" disabled={isBusy} onClick={() => void viewTranscript(video)} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-200 transition hover:bg-white/5 disabled:opacity-50">
+                            {isBusy ? "Loading…" : "View transcript"}
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-3 pl-20 sm:pl-0">
-                    <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 text-[11px] font-medium text-emerald-300">{video.status}</span>
-                    <span className="text-xs text-zinc-600">{new Date(video.createdAt).toLocaleDateString()}</span>
-                  </div>
-                </article>
-              ))}
+
+                    {video.transcriptionError && <p className="mt-3 rounded-lg border border-red-400/15 bg-red-400/[0.06] px-3 py-2 text-xs text-red-200">{video.transcriptionError}</p>}
+
+                    {transcriptData?.transcript && (
+                      <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-violet-200">Transcript</h4>
+                          <span className="text-xs text-zinc-500">Language: {transcriptData.transcript.language ?? "Unknown"}</span>
+                        </div>
+                        <p className="whitespace-pre-wrap text-sm leading-7 text-zinc-200">{transcriptData.transcript.text}</p>
+                        <div className="mt-4 space-y-2 border-t border-white/10 pt-3">
+                          {transcriptData.transcript.segments.map((segment) => (
+                            <div key={segment.id} className="grid grid-cols-[90px_1fr] gap-3 text-xs leading-6">
+                              <span className="font-mono text-violet-300">{formatTimestamp(segment.startSeconds)}–{formatTimestamp(segment.endSeconds)}</span>
+                              <span className="text-zinc-400">{segment.text}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
             </div>
           )}
         </section>
