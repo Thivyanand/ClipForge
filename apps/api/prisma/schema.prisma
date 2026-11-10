@@ -19,10 +19,36 @@ model Video {
   codec           String?
   frameRate       Float?
   format          String?
-  status          String   @default("uploaded")
+  status               String   @default("uploaded")
+  transcriptionStatus  String   @default("not_started")
+  transcript           Transcript?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   @@index([createdAt])
   @@index([status])
+  @@index([transcriptionStatus])
+}
+
+model Transcript {
+  id          String              @id @default(cuid())
+  videoId     String              @unique
+  language    String?
+  text        String              @db.Text
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  video       Video               @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  segments    TranscriptSegment[]
+}
+
+model TranscriptSegment {
+  id           String     @id @default(cuid())
+  transcriptId String
+  startSeconds Float
+  endSeconds   Float
+  text         String     @db.Text
+  createdAt    DateTime   @default(now())
+  transcript   Transcript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+
+  @@index([transcriptId, startSeconds])
 }
