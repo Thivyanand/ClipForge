@@ -1,7 +1,8 @@
-
 import {
   BadRequestException,
   Controller,
+  Get,
+  Param,
   Post,
   UploadedFile,
   UseInterceptors,
@@ -17,7 +18,6 @@ const uploadDirectory = resolve(
   process.cwd(),
   '../../storage/uploads',
 );
-
 const allowedExtensions = ['.mp4', '.mov', '.webm'];
 
 @Controller('videos')
@@ -39,22 +39,15 @@ export class VideosController {
           );
         },
       }),
-      limits: {
-        fileSize: 500 * 1024 * 1024,
-        files: 1,
-      },
+      limits: { fileSize: 500 * 1024 * 1024, files: 1 },
       fileFilter: (_req, file, callback) => {
         const extension = extname(file.originalname).toLowerCase();
-
         if (!allowedExtensions.includes(extension)) {
           return callback(
-            new BadRequestException(
-              'Only MP4, MOV and WebM are allowed.',
-            ),
+            new BadRequestException('Only MP4, MOV and WebM are allowed.'),
             false,
           );
         }
-
         callback(null, true);
       },
     }),
@@ -64,11 +57,19 @@ export class VideosController {
       throw new BadRequestException('Please provide a video file.');
     }
 
-    const metadata = await this.videosService.inspect(file);
-
     return {
       message: 'Video uploaded successfully.',
-      video: metadata,
+      video: await this.videosService.inspectAndSave(file),
     };
+  }
+
+  @Get()
+  async findAll() {
+    return { videos: await this.videosService.findAll() };
+  }
+
+  @Get(':id')
+  async findOne(@Param('id') id: string) {
+    return { video: await this.videosService.findOne(id) };
   }
 }

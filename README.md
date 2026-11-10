@@ -6,14 +6,14 @@ AI-powered video repurposing platform for content creators.
 
 ## Status
 
-**Phase 0 — Foundation.** Repository and application scaffolding.
+**Sprint 1 — Video ingestion and metadata persistence.** The API accepts video uploads, validates media with FFprobe, and stores metadata in PostgreSQL. The creator dashboard and AI editing pipeline are still in development.
 
 ## Planned stack
 
 - Web: Next.js, React, TypeScript, Tailwind CSS
 - API: NestJS, TypeScript
 - AI workers: Python
-- Data: PostgreSQL, Prisma (planned)
+- Data: PostgreSQL and Prisma
 - Local queue/cache: Redis and BullMQ (planned)
 - Media: FFmpeg
 - Development: Docker Compose
@@ -30,12 +30,14 @@ AI-powered video repurposing platform for content creators.
 
 ## Local development
 
-Requirements: Node.js 24+, npm, Python 3.11+, and Docker with Compose.
+Requirements: Node.js 24+, npm, Python 3.11+, Docker Compose, FFmpeg and FFprobe.
 
 ```bash
 cp .env.example .env
 npm install
 docker compose up -d
+npm run prisma:generate --workspace @clipforge/api
+npm run prisma:migrate --workspace @clipforge/api
 ```
 
 Run the applications in separate terminals:
