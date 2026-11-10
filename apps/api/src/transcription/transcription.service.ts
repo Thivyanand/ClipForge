@@ -39,19 +39,23 @@ export class TranscriptionService implements OnModuleInit, OnModuleDestroy {
       return { videoId, status: video.transcriptionStatus, message: 'Transcription is already in progress.' };
     }
 
+    await this.prisma.video.update({
+      where: { id: videoId },
+      data: { transcriptionStatus: 'queued' },
+    });
+
     try {
       await this.redis.lPush(QUEUE_KEY, JSON.stringify({
         videoId: video.id,
         storageKey: video.storageKey,
       }));
     } catch {
+      await this.prisma.video.update({
+        where: { id: videoId },
+        data: { transcriptionStatus: 'failed' },
+      });
       throw new ServiceUnavailableException('The transcription queue is unavailable. Please try again.');
     }
-
-    await this.prisma.video.update({
-      where: { id: videoId },
-      data: { transcriptionStatus: 'queued' },
-    });
 
     return { videoId, status: 'queued', message: 'Video added to the transcription queue.' };
   }
