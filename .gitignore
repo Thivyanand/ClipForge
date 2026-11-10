@@ -16,3 +16,10 @@ temp/
 storage/
 .idea/
 .vscode/
+
+# Video storage
+storage/*
+!storage/.gitkeep
+
+# Python packaging artifacts
+*.egg-info/
