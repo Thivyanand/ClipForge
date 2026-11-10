@@ -14,10 +14,9 @@ import { mkdirSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
 import { VideosService } from './videos.service';
 
-const uploadDirectory = resolve(
-  process.cwd(),
-  '../../storage/uploads',
-);
+// Resolve from this file so the path is stable whether Nest runs from
+// the workspace root, source files, or compiled dist output.
+const uploadDirectory = resolve(__dirname, '../../../../storage/uploads');
 const allowedExtensions = ['.mp4', '.mov', '.webm'];
 
 @Controller('videos')
