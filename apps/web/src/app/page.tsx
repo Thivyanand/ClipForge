@@ -28,6 +28,15 @@ type TranscriptResult = {
   transcript: Transcript | null;
 };
 
+type ClipSuggestion = {
+  id: string;
+  title: string;
+  startSeconds: number;
+  endSeconds: number;
+  score: number;
+  reason: string;
+};
+
 const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1").replace(/\/$/, "");
 
 function formatBytes(bytes: number) {
@@ -56,6 +65,7 @@ export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [videos, setVideos] = useState<Video[]>([]);
   const [transcripts, setTranscripts] = useState<Record<string, TranscriptResult>>({});
+  const [clipSuggestions, setClipSuggestions] = useState<Record<string, ClipSuggestion[]>>({});
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [workingVideoId, setWorkingVideoId] = useState("");
@@ -135,6 +145,26 @@ export default function Home() {
       await loadVideos();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not queue transcription.");
+    } finally {
+      setWorkingVideoId("");
+    }
+  }
+
+  async function discoverClips(video: Video) {
+    setWorkingVideoId(video.id);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`${API_URL}/videos/${video.id}/clips/discover`, { method: "POST" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const message = Array.isArray(data.message) ? data.message.join(" ") : data.message;
+        throw new Error(message ?? "Could not discover clips.");
+      }
+      setClipSuggestions((current) => ({ ...current, [video.id]: data.clips ?? [] }));
+      setNotice(data.message ?? "Clip suggestions generated.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not discover clips.");
     } finally {
       setWorkingVideoId("");
     }
@@ -247,14 +277,41 @@ export default function Home() {
                         )}
                         {["queued", "processing"].includes(video.transcriptionStatus) && <span className="text-xs text-amber-300">Transcription in progress…</span>}
                         {video.transcriptionStatus === "completed" && (
-                          <button type="button" disabled={isBusy} onClick={() => void viewTranscript(video)} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-200 transition hover:bg-white/5 disabled:opacity-50">
-                            {isBusy ? "Loading…" : "View transcript"}
-                          </button>
+                          <>
+                            <button type="button" disabled={isBusy} onClick={() => void viewTranscript(video)} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-200 transition hover:bg-white/5 disabled:opacity-50">
+                              {isBusy ? "Loading…" : "View transcript"}
+                            </button>
+                            <button type="button" disabled={isBusy} onClick={() => void discoverClips(video)} className="rounded-lg bg-fuchsia-500/90 px-3 py-2 text-xs font-semibold text-white transition hover:bg-fuchsia-400 disabled:opacity-50">
+                              {isBusy ? "Finding moments…" : "✦ Find clips"}
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
 
                     {video.transcriptionError && <p className="mt-3 rounded-lg border border-red-400/15 bg-red-400/[0.06] px-3 py-2 text-xs text-red-200">{video.transcriptionError}</p>}
+
+                    {clipSuggestions[video.id]?.length > 0 && (
+                      <div className="mt-4 rounded-xl border border-fuchsia-400/20 bg-fuchsia-400/[0.04] p-4">
+                        <div className="mb-3 flex items-center justify-between">
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-fuchsia-200">Suggested clips</h4>
+                          <span className="text-xs text-zinc-500">{clipSuggestions[video.id].length} moments · ranked</span>
+                        </div>
+                        <div className="grid gap-3 md:grid-cols-2">
+                          {clipSuggestions[video.id].map((clip, index) => (
+                            <div key={clip.id} className="rounded-lg border border-white/10 bg-black/30 p-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <span className="text-xs font-semibold text-zinc-100">{index + 1}. {clip.title}</span>
+                                <span className="shrink-0 rounded-full bg-fuchsia-400/10 px-2 py-1 text-[10px] font-semibold text-fuchsia-200">{clip.score}/100</span>
+                              </div>
+                              <p className="mt-2 font-mono text-[11px] text-violet-300">{formatTimestamp(clip.startSeconds)} – {formatTimestamp(clip.endSeconds)} · {formatDuration(clip.endSeconds - clip.startSeconds)}</p>
+                              <p className="mt-2 text-xs leading-5 text-zinc-400">{clip.reason}</p>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="mt-3 text-[11px] text-zinc-600">Suggestions are transcript-based heuristics, not guaranteed engagement predictions.</p>
+                      </div>
+                    )}
 
                     {transcriptData?.transcript && (
                       <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">
@@ -282,7 +339,7 @@ export default function Home() {
 
         <footer className="flex flex-col gap-2 py-8 text-xs text-zinc-600 sm:flex-row sm:justify-between">
           <span>ClipForge · Creator workspace</span>
-          <span>AI clip discovery and editing tools are coming next.</span>
+          <span>AI-powered clip discovery · More editing tools coming next.</span>
         </footer>
       </div>
     </main>
