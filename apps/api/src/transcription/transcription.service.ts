@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   NotFoundException,
   OnModuleDestroy,
@@ -6,9 +7,15 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { createClient, RedisClientType } from 'redis';
+import { execFile } from 'node:child_process';
+import { access } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { promisify } from 'node:util';
 import { PrismaService } from '../database/prisma.service';
 
 const QUEUE_KEY = 'clipforge:transcription:jobs';
+const execFileAsync = promisify(execFile);
+const UPLOADS_DIR = resolve(process.env.UPLOADS_DIR ?? 'storage/uploads');
 
 @Injectable()
 export class TranscriptionService implements OnModuleInit, OnModuleDestroy {
@@ -39,9 +46,35 @@ export class TranscriptionService implements OnModuleInit, OnModuleDestroy {
       return { videoId, status: video.transcriptionStatus, message: 'Transcription is already in progress.' };
     }
 
+    const mediaPath = resolve(UPLOADS_DIR, video.storageKey);
+    if (!mediaPath.startsWith(`${UPLOADS_DIR}/`)) {
+      throw new BadRequestException('Invalid uploaded media path.');
+    }
+    try {
+      await access(mediaPath);
+    } catch {
+      throw new BadRequestException('The uploaded video file is missing from storage.');
+    }
+
+    try {
+      const { stdout } = await execFileAsync('ffprobe', [
+        '-v', 'error',
+        '-select_streams', 'a',
+        '-show_entries', 'stream=index',
+        '-of', 'csv=p=0',
+        mediaPath,
+      ]);
+      if (!stdout.trim()) {
+        throw new BadRequestException('This video has no audio stream and cannot be transcribed.');
+      }
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      throw new ServiceUnavailableException('Could not inspect the video audio stream. Ensure FFprobe is installed.');
+    }
+
     await this.prisma.video.update({
       where: { id: videoId },
-      data: { transcriptionStatus: 'queued' },
+      data: { transcriptionStatus: 'queued', transcriptionError: null },
     });
 
     try {
@@ -52,7 +85,7 @@ export class TranscriptionService implements OnModuleInit, OnModuleDestroy {
     } catch {
       await this.prisma.video.update({
         where: { id: videoId },
-        data: { transcriptionStatus: 'failed' },
+        data: { transcriptionStatus: 'failed', transcriptionError: 'The transcription queue is unavailable.' },
       });
       throw new ServiceUnavailableException('The transcription queue is unavailable. Please try again.');
     }
@@ -63,7 +96,7 @@ export class TranscriptionService implements OnModuleInit, OnModuleDestroy {
   async getTranscript(videoId: string) {
     const video = await this.prisma.video.findUnique({
       where: { id: videoId },
-      select: { id: true, transcriptionStatus: true },
+      select: { id: true, transcriptionStatus: true, transcriptionError: true },
     });
     if (!video) throw new NotFoundException('Video not found.');
 
@@ -75,6 +108,7 @@ export class TranscriptionService implements OnModuleInit, OnModuleDestroy {
     return {
       videoId,
       status: video.transcriptionStatus,
+      error: video.transcriptionError,
       transcript,
     };
   }

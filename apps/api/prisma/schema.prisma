@@ -8,22 +8,23 @@ datasource db {
 }
 
 model Video {
-  id              String   @id @default(cuid())
-  originalName    String
-  storageKey      String   @unique
-  size            Int
-  mimeType        String
-  durationSeconds Float
-  width           Int?
-  height          Int?
-  codec           String?
-  frameRate       Float?
-  format          String?
-  status               String   @default("uploaded")
-  transcriptionStatus  String   @default("not_started")
-  transcript           Transcript?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  originalName        String
+  storageKey          String   @unique
+  size                Int
+  mimeType             String
+  durationSeconds     Float
+  width               Int?
+  height              Int?
+  codec               String?
+  frameRate           Float?
+  format              String?
+  status              String   @default("uploaded")
+  transcriptionStatus String   @default("not_started")
+  transcriptionError  String?  @db.Text
+  transcript          Transcript?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   @@index([createdAt])
   @@index([status])
@@ -31,14 +32,14 @@ model Video {
 }
 
 model Transcript {
-  id          String              @id @default(cuid())
-  videoId     String              @unique
-  language    String?
-  text        String              @db.Text
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
-  video       Video               @relation(fields: [videoId], references: [id], onDelete: Cascade)
-  segments    TranscriptSegment[]
+  id        String              @id @default(cuid())
+  videoId   String              @unique
+  language  String?
+  text      String              @db.Text
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+  video     Video               @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  segments  TranscriptSegment[]
 }
 
 model TranscriptSegment {

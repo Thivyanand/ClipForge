@@ -92,9 +92,7 @@ export class VideosService {
 
   async findOne(id: string) {
     const video = await this.prisma.video.findUnique({ where: { id } });
-    if (!video) {
-      throw new NotFoundException('Video not found.');
-    }
+    if (!video) throw new NotFoundException('Video not found.');
     return this.toResponse(video);
   }
 
@@ -111,6 +109,8 @@ export class VideosService {
     frameRate: number | null;
     format: string | null;
     status: string;
+    transcriptionStatus: string;
+    transcriptionError: string | null;
     createdAt: Date;
   }) {
     return {
@@ -126,6 +126,8 @@ export class VideosService {
       frameRate: video.frameRate,
       format: video.format,
       status: video.status,
+      transcriptionStatus: video.transcriptionStatus,
+      transcriptionError: video.transcriptionError,
       createdAt: video.createdAt,
     };
   }
