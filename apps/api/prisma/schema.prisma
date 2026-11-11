@@ -10,21 +10,22 @@ datasource db {
 model Video {
   id                  String   @id @default(cuid())
   originalName        String
-  storageKey          String   @unique
-  size                Int
+  storageKey           String   @unique
+  size                 Int
   mimeType             String
   durationSeconds     Float
-  width               Int?
-  height              Int?
-  codec               String?
-  frameRate           Float?
-  format              String?
-  status              String   @default("uploaded")
+  width                Int?
+  height               Int?
+  codec                String?
+  frameRate            Float?
+  format               String?
+  status               String   @default("uploaded")
   transcriptionStatus String   @default("not_started")
   transcriptionError  String?  @db.Text
-  transcript          Transcript?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  transcript           Transcript?
+  clipSuggestions      ClipSuggestion[]
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   @@index([createdAt])
   @@index([status])
@@ -52,4 +53,18 @@ model TranscriptSegment {
   transcript   Transcript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
 
   @@index([transcriptId, startSeconds])
+}
+
+model ClipSuggestion {
+  id           String   @id @default(cuid())
+  videoId      String
+  title        String
+  startSeconds Float
+  endSeconds   Float
+  score        Int
+  reason       String   @db.Text
+  createdAt    DateTime @default(now())
+  video        Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@index([videoId, score])
 }
