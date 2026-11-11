@@ -14,4 +14,14 @@ export class TranscriptionController {
   getTranscript(@Param('id') id: string) {
     return this.transcriptionService.getTranscript(id);
   }
+
+  @Post('clips/discover')
+  discoverClips(@Param('id') id: string) {
+    return this.transcriptionService.discoverClips(id);
+  }
+
+  @Get('clips')
+  getClipSuggestions(@Param('id') id: string) {
+    return this.transcriptionService.getClipSuggestions(id);
+  }
 }
